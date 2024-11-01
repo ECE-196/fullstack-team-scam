@@ -10,9 +10,6 @@ from threading import Thread, Lock # we'll use Lock later ;)
 S_OK: int = 0xaa
 S_ERR: int = 0xff
 
-def detached_callback(f):
-    return lambda *args, **kwargs: Thread(target=f, args=args, kwargs=kwargs).start()
-
 
 class LockedSerial(Serial):
     _lock: Lock = Lock()
@@ -33,6 +30,8 @@ class LockedSerial(Serial):
             
 
 class App(tk.Tk):
+    ser: LockedSerial
+
     def __init__(self):
         super().__init__()
 
@@ -44,13 +43,23 @@ class App(tk.Tk):
         ttk.Button(self, text='Send Invalid', command=self.send_invalid).pack()
         ttk.Button(self, text='Disconnect',command=self.disconnect, default='active').pack()
         SerialPortal(self) # and this
-    
+
+    def detached_callback(f):
+        return lambda *args, **kwargs: Thread(target=f, args=args, kwargs=kwargs).start()
+
     def connect(self):
         self.ser = LockedSerial(self.port.get())
+
+    @detached_callback
+    def update_led(self):
+        self.write(bytes([self.led.get()]))
 
     def disconnect(self):
         self.ser.close()
         SerialPortal(self) # display portal to reconnect
+
+    def send_invalid(self):
+        self.write(bytes([0x10]))
 
     def write(self, b: bytes):
         try:
@@ -60,15 +69,9 @@ class App(tk.Tk):
         except SerialException:
             showerror('Serial Error', 'Write failed.')
 
-    @detached_callback
-    def update_led(self):
-        self.write(bytes([self.led.get()]))
-
-    def send_invalid(self):
-        self.write(bytes([0x10]))
-
     def __enter__(self):
         return self
+
     def __exit__(self, *_):
         self.disconnect()
 
@@ -76,8 +79,10 @@ class App(tk.Tk):
 class SerialPortal(tk.Toplevel):
     def __init__(self, parent: App):
         super().__init__(parent)
+
         self.parent = parent
         self.parent.withdraw() # hide App until connected
+
         ttk.OptionMenu(self, parent.port, '', *[d.device for d in comports()]).pack()
         ttk.Button(self, text='Connect', command=self.connect, default='active').pack()
 
@@ -85,7 +90,6 @@ class SerialPortal(tk.Toplevel):
         self.parent.connect()
         self.destroy()
         self.parent.deiconify() # reveal App
-
 
 
     
